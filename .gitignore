@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+.token
+playlists.json
+lists/
+update-log.md
+update-run.log

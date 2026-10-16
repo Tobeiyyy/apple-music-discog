@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Discography Playlists</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💿</text></svg>">
+<style>
+  :root {
+    --bg: #f6f5f3; --card: #ffffff; --text: #1d1d1f; --muted: #6e6e73; --line: #e3e1dd;
+    --accent: #fa2d48; --accent-text: #ffffff; --ok: #1f8a4c; --warn: #b26a00; --err: #c62828;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121214; --card: #1c1c1f; --text: #f2f2f4; --muted: #9a9aa1; --line: #2c2c31;
+            --accent: #ff4d63; --ok: #4cc27f; --warn: #f0a640; --err: #ff6b6b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -.01em; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 36px 0 10px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  input[type=search] { width: 100%; font: inherit; font-size: 17px; padding: 14px 16px; border-radius: 12px;
+         border: 1px solid var(--line); background: var(--card); color: var(--text); outline: none; }
+  input[type=search]:focus { border-color: var(--accent); }
+  .results { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
+  .artist { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 12px; cursor: pointer;
+            background: var(--card); border: 1px solid var(--line); text-align: left; color: inherit; font: inherit; }
+  .artist:hover, .artist.sel { border-color: var(--accent); }
+  .artist img, .artist .ph { width: 44px; height: 44px; border-radius: 50%; flex: none; background: var(--line); object-fit: cover; }
+  .artist b { display: block; font-size: 14px; line-height: 1.2; }
+  .artist small { color: var(--muted); font-size: 12px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  button.btn { font: inherit; font-weight: 600; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line);
+               background: var(--card); color: var(--text); cursor: pointer; }
+  button.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button.btn:disabled { opacity: .5; cursor: default; }
+  .log { font: 13px/1.5 ui-monospace, Consolas, monospace; color: var(--muted); white-space: pre-wrap; margin: 10px 0 0; }
+  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent);
+          border-radius: 50%; animation: s 0.8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
+  a { color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td { padding: 7px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+  td.d { color: var(--muted); white-space: nowrap; width: 1%; }
+  td.n { text-align: right; color: var(--muted); white-space: nowrap; width: 1%; }
+  .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; margin-left: 6px; }
+  .big { font-size: 18px; font-weight: 700; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>💿 Discography Playlists</h1>
+  <p class="sub">Type an artist, pick them, and their whole discography lands in Apple Music in chronological order.</p>
+
+  <input type="search" id="q" placeholder="Search an artist…" autofocus autocomplete="off">
+  <div class="results" id="results"></div>
+
+  <div id="picked" class="card hidden" style="margin-top:16px"></div>
+  <div id="job" class="card hidden" style="margin-top:16px"></div>
+
+  <h2>Your playlists</h2>
+  <div class="card">
+    <div class="row" style="margin-bottom:6px">
+      <span class="sub" style="margin:0">New releases are added to the bottom every Friday automatically.</span>
+      <button class="btn" id="updAll">Check all for new releases</button>
+    </div>
+    <table id="pls"></table>
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let playlists = [], picked = null, timer = null;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)} : {});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+async function loadPlaylists() {
+  playlists = await api('/api/playlists');
+  $('#pls').innerHTML = playlists.length ? playlists.map(p => `
+    <tr><td><b>${esc(p.artist)}</b><br><small class="sub">${p.tracks} tracks · updated ${esc(p.updated.slice(0, 10))}</small></td>
+        <td class="n"><a href="${esc(p.url)}" target="_blank">Open</a> · <a href="#" data-upd="${p.id}">Check now</a></td></tr>`).join('')
+    : '<tr><td class="sub">None yet.</td></tr>';
+}
+
+$('#q').addEventListener('input', () => {
+  clearTimeout(timer);
+  const q = $('#q').value.trim();
+  if (q.length < 2) { $('#results').innerHTML = ''; return; }
+  timer = setTimeout(async () => {
+    const list = await api('/api/search?q=' + encodeURIComponent(q));
+    $('#results').innerHTML = list.map(a => `
+      <button class="artist" data-id="${a.id}" data-name="${esc(a.name)}">
+        ${a.art ? `<img src="${esc(a.art)}" alt="">` : '<span class="ph"></span>'}
+        <span><b>${esc(a.name)}</b><small>${esc(a.genre)}</small></span></button>`).join('')
+      || '<span class="sub">No artist found.</span>';
+  }, 300);
+});
+
+$('#results').addEventListener('click', e => {
+  const b = e.target.closest('.artist'); if (!b) return;
+  document.querySelectorAll('.artist').forEach(x => x.classList.toggle('sel', x === b));
+  picked = {id: b.dataset.id, name: b.dataset.name};
+  const has = playlists.find(p => p.id === picked.id);
+  $('#picked').classList.remove('hidden');
+  $('#picked').innerHTML = `<div class="big">${esc(picked.name)}</div>` + (has
+    ? `<p class="sub" style="margin:4px 0 0">Already has a playlist (${has.tracks} tracks).</p>
+       <div class="actions"><button class="btn primary" data-act="update">Check for new releases</button>
+       <a class="btn" href="${esc(has.url)}" target="_blank" style="text-decoration:none">Open playlist</a>
+       <button class="btn" data-act="preview">Preview list</button>
+       <button class="btn" data-act="rebuild">Rebuild as a new playlist</button></div>`
+    : `<div class="actions"><button class="btn primary" data-act="create">Create playlist</button>
+       <button class="btn" data-act="preview">Preview list first</button></div>`);
+});
+
+$('#picked').addEventListener('click', e => {
+  const act = e.target.dataset.act; if (!act) return;
+  if (act === 'rebuild' && !confirm('This creates a NEW playlist with the corrected order. Delete the old one yourself afterwards. Continue?')) return;
+  run(act);
+});
+
+$('#updAll').addEventListener('click', () => run('update', true));
+$('#pls').addEventListener('click', e => {
+  const id = e.target.dataset.upd; if (!id) return;
+  e.preventDefault(); picked = {id, name: playlists.find(p => p.id === id).artist}; run('update');
+});
+
+async function run(act, all) {
+  const path = {create: '/api/create', rebuild: '/api/create', preview: '/api/preview', update: '/api/update'}[act];
+  const body = {artist_id: all ? '' : picked.id, new: act === 'rebuild'};
+  $('#job').classList.remove('hidden');
+  document.querySelectorAll('button.btn').forEach(b => b.disabled = true);
+  try {
+    let job = await api(path, body);
+    while (job.status === 'running') {
+      $('#job').innerHTML = `<div><span class="spin"></span><b>Working…</b></div><div class="log">${esc(job.log.slice(-6).join('\n'))}</div>`;
+      await new Promise(r => setTimeout(r, 1000));
+      job = await api('/api/job/' + job.id);
+    }
+    show(job);
+  } catch (err) {
+    $('#job').innerHTML = `<b class="err">${esc(err.message)}</b>`;
+  }
+  document.querySelectorAll('button.btn').forEach(b => b.disabled = false);
+  loadPlaylists();
+}
+
+function show(job) {
+  if (job.status === 'error') {
+    $('#job').innerHTML = `<b class="err">Something went wrong</b><div class="log">${esc(job.log.slice(-4).join('\n'))}</div>`;
+    return;
+  }
+  const r = job.result;
+  if (job.kind === 'update') {
+    $('#job').innerHTML = `<b class="ok">Done</b><div class="log">${esc(r.report)}</div>`;
+    return;
+  }
+  const head = job.kind === 'create'
+    ? `<div class="big ${r.problems.length ? 'warn' : 'ok'}">${r.problems.length ? 'Created – check these' : '✓ Playlist created, order verified'}</div>
+       <p><a href="${esc(r.url)}" target="_blank">Open “${esc(r.name)} – Discography” in Apple Music</a></p>
+       ${r.problems.length ? `<div class="log warn">${esc(r.problems.join('\n'))}</div>` : ''}`
+    : `<div class="big">Preview: ${esc(r.name)}</div>
+       <div class="actions"><button class="btn primary" data-go="create">Create this playlist</button></div>`;
+  $('#job').innerHTML = head + `
+    <p class="sub">${r.tracks} tracks · ${esc(r.duration)} · ${r.releases.length} releases ·
+       <a href="${esc(r.decisions)}" target="_blank">what was merged or dropped, and why</a></p>
+    <table>${r.releases.map(x => `<tr><td class="d">${esc(x.date)}</td><td>${esc(x.release)}${x.type !== 'album' ? `<span class="tag">${esc(x.type)}</span>` : ''}</td><td class="n">${x.tracks}</td></tr>`).join('')}</table>`;
+  const go = $('#job [data-go]');
+  if (go) go.onclick = () => run(playlists.find(p => p.id === picked.id) ? 'rebuild' : 'create');
+}
+
+loadPlaylists();
+</script>
+</body>
+</html>
