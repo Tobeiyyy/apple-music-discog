@@ -51,6 +51,11 @@
   .big { font-size: 18px; font-weight: 700; }
   .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
   .hidden { display: none; }
+  .steps { margin: 8px 0 12px; padding-left: 20px; }
+  .steps li { margin: 4px 0; }
+  code { font: 13px ui-monospace, Consolas, monospace; background: var(--bg); padding: 1px 5px; border-radius: 5px; }
+  input.token { width: 100%; font: 13px ui-monospace, Consolas, monospace; padding: 12px; border-radius: 10px;
+                border: 1px solid var(--line); background: var(--bg); color: var(--text); }
 </style>
 </head>
 <body>
@@ -58,7 +63,25 @@
   <h1>💿 Discography Playlists</h1>
   <p class="sub">Type an artist, pick them, and their whole discography lands in Apple Music in chronological order.</p>
 
-  <input type="search" id="q" placeholder="Search an artist…" autofocus autocomplete="off">
+  <div id="connect" class="card hidden">
+    <div class="big">Connect your Apple Music account</div>
+    <p id="connectWhy" class="sub" style="margin:4px 0 0">One time only. The tool needs your account token to create playlists in your library.</p>
+    <ol class="steps">
+      <li>Open <a href="https://music.apple.com" target="_blank">music.apple.com</a> in this browser and sign in.</li>
+      <li>Press <b>F12</b> to open the developer tools.<br>
+          Chrome, Edge, Brave: <b>Application</b> tab → <b>Cookies</b> → <code>https://music.apple.com</code><br>
+          Firefox: <b>Storage</b> tab → <b>Cookies</b> → <code>https://music.apple.com</code></li>
+      <li>Find <code>media-user-token</code>, copy its whole value and paste it here:</li>
+    </ol>
+    <input class="token" id="token" type="password" placeholder="media-user-token" autocomplete="off">
+    <div class="actions"><button class="btn primary" id="connectBtn">Connect</button></div>
+    <p class="sub" style="margin:10px 0 0">The token stays on this computer (saved in the <code>.env</code> file next to the app) and
+      is only sent to Apple. Don't share it: it gives access to your Apple Music library.</p>
+    <div id="connectMsg"></div>
+  </div>
+
+  <div id="app" class="hidden">
+  <input type="search" id="q" placeholder="Search an artist…" autocomplete="off">
   <div class="results" id="results"></div>
 
   <div id="picked" class="card hidden" style="margin-top:16px"></div>
@@ -72,6 +95,7 @@
     </div>
     <table id="pls"></table>
   </div>
+  </div>
 </main>
 <script>
 const $ = s => document.querySelector(s);
@@ -79,7 +103,8 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 let playlists = [], picked = null, timer = null;
 
 async function api(path, body) {
-  const r = await fetch(path, body ? {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)} : {});
+  const r = await fetch(path, body ? {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Discog': '1'},
+                                      body: JSON.stringify(body)} : {});
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
@@ -179,7 +204,35 @@ function show(job) {
   if (go) go.onclick = () => run(playlists.find(p => p.id === picked.id) ? 'rebuild' : 'create');
 }
 
-loadPlaylists();
+function showApp() {
+  $('#connect').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  $('#q').focus();
+  loadPlaylists();
+}
+
+$('#connectBtn').addEventListener('click', async () => {
+  const token = $('#token').value.trim();
+  if (!token) return;
+  $('#connectBtn').disabled = true;
+  $('#connectMsg').innerHTML = '<p><span class="spin"></span>Checking with Apple…</p>';
+  try {
+    await api('/api/connect', {token});
+    $('#token').value = '';
+    showApp();
+  } catch (err) {
+    $('#connectMsg').innerHTML = `<p class="err">${esc(err.message)}</p>`;
+  }
+  $('#connectBtn').disabled = false;
+});
+
+(async () => {
+  const s = await api('/api/status');
+  if (s.connected) return showApp();
+  if (s.had_token) $('#connectWhy').textContent = 'Apple no longer accepts the saved token (it expires when you sign out of music.apple.com). Paste a fresh one.';
+  $('#connect').classList.remove('hidden');
+  $('#token').focus();
+})();
 </script>
 </body>
 </html>

@@ -1,10 +1,12 @@
 """Local website for apple-music-discog: search an artist, click, get the playlist.
 
     python server.py            # then open http://localhost:8766
+    python server.py --open     # same, and open it in the browser (what Start.cmd / Start.command do)
     pythonw server.py           # same, without a console window (used for autostart)
 
 Only listens on this computer (127.0.0.1). One job runs at a time.
 """
+import argparse
 import contextlib
 import datetime
 import io
@@ -14,16 +16,18 @@ import sys
 import threading
 import traceback
 import uuid
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import library
 import update
-from discog import COUNTRY, HERE, LISTS, amp, build
+from discog import COUNTRY, HERE, LISTS, amp, build, setting
 
 PORT = 8766
 STOREFRONT = COUNTRY
 WEB = HERE / "web"
+ALLOWED_HOSTS = {f"localhost:{PORT}", f"127.0.0.1:{PORT}"}
 
 JOBS = {}
 JOB_LOCK = threading.Lock()  # one job at a time: playlists.json and the API are shared
@@ -103,6 +107,33 @@ def job_update(aid=None):
     return fn
 
 
+def allowed(host, method, headers):
+    """Only this computer's own page may use the server. The Host check stops a website whose name points
+    at 127.0.0.1 (DNS rebinding); the custom header stops other websites from posting here, because browsers
+    only send it cross-site after a permission check this server never answers."""
+    return host in ALLOWED_HOSTS and (method == "GET" or headers.get("X-Discog") == "1")
+
+
+def status():
+    """Is an Apple Music account connected? Also picks up the account's country."""
+    global STOREFRONT
+    token = setting("MEDIA_USER_TOKEN")
+    country = library.account_country(token) if token and token != "paste-your-media-user-token-here" else None
+    if country:
+        STOREFRONT = country
+    return {"connected": bool(country), "had_token": bool(token) and not country}
+
+
+def connect(token):
+    global STOREFRONT
+    country = library.account_country(token)
+    if not country:
+        return None
+    library.save_settings(MEDIA_USER_TOKEN=token, APPLE_MUSIC_COUNTRY=country)
+    STOREFRONT = country
+    return country
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -118,11 +149,15 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
+        if not allowed(self.headers.get("Host"), "GET", self.headers):
+            return self.send(403, {"error": "forbidden"})
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         try:
             if u.path == "/":
                 return self.send(200, (WEB / "index.html").read_bytes(), "text/html; charset=utf-8")
+            if u.path == "/api/status":
+                return self.send(200, status())
             if u.path == "/api/search":
                 d = amp(f"/v1/catalog/{STOREFRONT}/search", term=q.get("q", ""), types="artists", limit=8)
                 out = []
@@ -150,7 +185,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(500, {"error": f"{type(e).__name__}: {e}"})
 
     def do_POST(self):
+        if not allowed(self.headers.get("Host"), "POST", self.headers):
+            return self.send(403, {"error": "forbidden"})
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        if self.path == "/api/connect":
+            country = connect(str(body.get("token", "")).strip().strip('"'))
+            return self.send(200, {"connected": True, "country": country}) if country else self.send(400, {
+                "error": "Apple didn't accept this token. Copy the whole value again; if it still fails, "
+                         "Apple may be busy - try again in a few minutes."})
         aid = str(body.get("artist_id", ""))
         if JOB_LOCK.locked():
             return self.send(409, {"error": "Another job is still running - wait a moment."})
@@ -164,8 +206,20 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"apple-music-discog running on http://localhost:{PORT}")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--open", action="store_true", help="open the page in your browser")
+    a = ap.parse_args()
+    url = f"http://localhost:{PORT}"
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    except OSError:  # already running (e.g. started at logon): just show it
+        if a.open:
+            webbrowser.open(url)
+        print(f"apple-music-discog is already running on {url}")
+        return
+    print(f"apple-music-discog running on {url} - close this window to stop it")
+    if a.open:
+        threading.Timer(0.5, webbrowser.open, args=[url]).start()
     srv.serve_forever()
 
 

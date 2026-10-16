@@ -84,12 +84,12 @@ def fetch_token():
 _token = TOKEN_FILE.read_text().strip() if TOKEN_FILE.exists() else None
 
 
-def amp(path, method="GET", body=None, user_token=None, **params):
+def amp(path, method="GET", body=None, user_token=None, tries=6, **params):
     """Call the Apple Music API. user_token is needed for anything under /v1/me (your library)."""
     global _token
     if params:
         path += ("&" if "?" in path else "?") + urllib.parse.urlencode(params)
-    for attempt in range(6):
+    for attempt in range(tries):
         _token = _token or fetch_token()
         headers = {**UA, "Authorization": f"Bearer {_token}", "Origin": "https://music.apple.com"}
         if user_token:

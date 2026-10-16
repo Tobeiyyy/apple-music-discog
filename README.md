@@ -30,53 +30,55 @@ Plain Python 3, no packages to install. Works with any Apple Music subscription.
 Every run also writes `lists/<artist>-decisions.md`, which lists every dropped release and track and why, so you
 can check nothing you care about went missing.
 
-## Setup
+## Get started
 
-1. Install Python 3 (on Windows from [python.org](https://www.python.org/downloads/), tick "Add python.exe to
-   PATH").
-2. Download this repo (`git clone https://github.com/Tobeiyyy/apple-music-discog` or **Code → Download ZIP**).
-3. Copy `.env.example` to `.env` and fill it in (next section).
+1. **Install Python 3.** Windows and Mac: [python.org/downloads](https://www.python.org/downloads/). On Windows,
+   tick **"Add python.exe to PATH"** in the installer.
+2. **Download this tool:** green **Code** button → **Download ZIP**, then unzip it anywhere.
+3. **Start it:**
+   - Windows: double-click **`Start.cmd`**.
+   - Mac: double-click **`Start.command`**. If macOS refuses to open a downloaded script, open Terminal in the
+     folder and run `python3 server.py --open` instead.
+   - Linux: run `python3 server.py --open` in the folder.
 
-### Get your Apple Music account token
+   Your browser opens the app at http://localhost:8766. A small window stays open while it runs; close it to
+   stop the app.
+4. **Connect your Apple Music account** (one time). The app shows the steps: sign in on music.apple.com, press
+   **F12**, copy the `media-user-token` cookie, paste it, click **Connect**. Your country is read from your
+   account.
+5. **Search an artist → Create playlist.** The playlist appears in your Apple Music library a moment later, on
+   every device. **Preview list first** shows what would go in, and *what was merged or dropped, and why*
+   lists every decision.
 
-1. Open https://music.apple.com and sign in.
-2. Open the developer tools with **F12**.
-   - Chrome, Edge, Brave: **Application** tab → **Cookies** → `https://music.apple.com`
-   - Firefox: **Storage** tab → **Cookies** → `https://music.apple.com`
-3. Copy the value of `media-user-token` and paste it into `.env`:
+Artists you've made a playlist for show up under **Your playlists**, with **Check now** to add new releases.
+New playlists go into a library folder called "Artists Discogs" if you have one, otherwise to the top level.
 
-   ```
-   MEDIA_USER_TOKEN=<the value>
-   APPLE_MUSIC_COUNTRY=us
-   ```
+**About the token:** it stays on your computer (in the `.env` file next to the app) and is only sent to Apple.
+Don't share it: it gives access to your Apple Music library. It lasts for months, but signing out of
+music.apple.com in that browser ends it; the app then asks for a fresh one.
 
-   `APPLE_MUSIC_COUNTRY` is your Apple Music country code (`us`, `gb`, `de`, `at`, `jp`…).
+**Safety:** the app only listens on your own computer, and other websites can't send it commands.
 
-The token gives access to your Apple Music library: never share it or commit `.env`. It lasts for months, but
-signing out of music.apple.com in that browser ends it. When it stops working, the tool says so and you repeat
-these steps.
+## Advanced: command line
 
-## Usage
+Everything the app does also works from a terminal in the tool's folder (`python3` on Mac/Linux):
 
 ```bash
 python discog.py "Kendrick Lamar"            # build the list only -> lists/
 python discog.py "Kendrick Lamar" --write    # build it and create the playlist in your library
+python discog.py 1440818847 --write          # same, by Apple artist ID (the number at the end of their page URL)
 python update.py                             # add new releases to all your playlists
 python update.py --dry-run                   # show what would be added, change nothing
 ```
 
-`--write` checks the finished playlist position by position. New playlists go into a library folder called
-"Artists Discogs" if you have one, otherwise to the top level. `playlists.json` remembers which playlist belongs
-to which artist, so `update.py` only appends what is new.
+Without the app, put your token into `.env` yourself: copy `.env.example` to `.env` and fill in
+`MEDIA_USER_TOKEN=` and your country code `APPLE_MUSIC_COUNTRY=` (`us`, `gb`, `de`…).
 
-Apple's API can add songs to a playlist but can't reorder or remove them. When Apple adds an *older* release
-later, the updater puts it at the bottom and tells you; for the exact order run
-`python discog.py "Artist" --write --new` and delete the old playlist yourself.
-
-### Website
-
-`python server.py` serves a small page at http://localhost:8766 (only reachable from your computer): search an
-artist, preview the list, create the playlist, check for new releases.
+Every new playlist is checked position by position after writing. `playlists.json` remembers which playlist
+belongs to which artist, so updates only append what is new. Apple's API can add songs to a playlist but can't
+reorder them: when Apple adds an *older* release later, the updater puts it at the bottom and says so. For the
+exact order, rebuild it (**Rebuild as a new playlist** in the app, or `python discog.py "Artist" --write --new`)
+and delete the old playlist yourself.
 
 ## Weekly updates
 
@@ -93,11 +95,11 @@ Every update run is appended to `update-log.md`.
 
 ## Troubleshooting
 
-- **"Apple Music rejected your account token"**: the token expired; get a new one (see above).
+- **"Apple Music rejected your account token"**: the token expired. Open the app and paste a fresh one.
 - **HTTP 403 after many requests**: Apple throttles busy accounts for a while. The tool already retries; if it
   still fails, wait 20 minutes and run it again. Runs only add what's missing, so repeating one is safe.
-- **Wrong artist**: the search takes Apple's first match. Use the artist's Apple ID instead (the number at the
-  end of their music.apple.com URL): `python discog.py 1440818847 --write`.
+- **Wrong artist** (command line): the search takes Apple's first match. Use the artist's Apple ID instead (see
+  above). In the app you pick the artist from the search results yourself.
 
 ## Tests
 

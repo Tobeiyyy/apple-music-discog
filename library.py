@@ -30,6 +30,28 @@ def user_token():
                      "(see README > Connect your Apple Music account).")
 
 
+def save_settings(**values):
+    """Write NAME=value lines into .env, keeping every other line."""
+    env = HERE / ".env"
+    lines = env.read_text(encoding="utf-8").splitlines() if env.exists() else []
+    for name, value in values.items():
+        i = next((i for i, line in enumerate(lines) if line.strip().startswith(name + "=")), None)
+        if i is None:
+            lines.append(f"{name}={value}")
+        else:
+            lines[i] = f"{name}={value}"
+    env.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def account_country(token):
+    """The account's country code ('us', 'de'…) if Apple accepts the token, else None. One try: a bad token
+    should fail in a second, not after the throttling retries."""
+    try:
+        return amp("/v1/me/storefront", user_token=token, tries=1)["data"][0]["id"]
+    except (Exception, SystemExit):
+        return None
+
+
 def load_state():
     return json.loads(STATE_FILE.read_text(encoding="utf-8")) if STATE_FILE.exists() else {}
 
