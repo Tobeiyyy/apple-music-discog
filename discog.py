@@ -349,7 +349,7 @@ def build(query, sf, quiet=False):
             mark(t)
             ts.append(t)
         if ts:
-            blocks.append((r["releaseDate"], 1, r["name"], "single", r["name"], ts))
+            blocks.append((r["releaseDate"], 1, (r["name"], 0, 0), "single", r["name"], ts))
 
     for s in sorted(cobilled, key=lambda s: s["attributes"].get("releaseDate", "")):
         at = s["attributes"]
@@ -359,7 +359,8 @@ def build(query, sf, quiet=False):
             log.append(("Track", f'{at["artistName"]} – {at["name"]}', "same recording already included"))
             continue
         mark(s)
-        blocks.append((at.get("releaseDate", ""), 1, at["name"], "co-billed",
+        blocks.append((at.get("releaseDate", ""), 1,
+                       (at.get("albumName", ""), at.get("discNumber", 1), at.get("trackNumber") or 0), "co-billed",
                        f'{at.get("albumName", "")} ({at["artistName"]})', [s]))
 
     # 5) Order and write

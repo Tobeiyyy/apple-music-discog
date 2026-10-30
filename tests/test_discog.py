@@ -72,3 +72,58 @@ class AmpRetries(unittest.TestCase):
         import urllib.error
         with self.assertRaises(urllib.error.HTTPError):
             self._run([404, 200])
+
+
+def _cobilled(sid, name, album, date, track, disc=1):
+    return {"id": sid, "type": "songs", "attributes": {
+        "name": name, "albumName": album, "releaseDate": date, "trackNumber": track, "discNumber": disc,
+        "artistName": "Thaiboy Digital & Bladee", "playParams": {"id": sid}, "isrc": "ISRC" + sid,
+        "durationInMillis": 100000 + int(sid) * 7000, "url": f"https://music.apple.com/at/album/x/9{sid}?i={sid}"},
+        "relationships": {"artists": {"data": [{"id": "1"}]}}}
+
+
+class CobilledOrder(unittest.TestCase):
+    """Songs from another artist's album keep that album's order (Back 2 Life: 3, 9, 10 - not A-Z)."""
+    SONGS = [_cobilled("1", "3 Star Reunite", "Back 2 Life", "2022-11-18", 10),
+             _cobilled("2", "All the Way", "Back 2 Life", "2022-11-18", 3),
+             _cobilled("3", "The Kingdom", "Back 2 Life", "2022-11-18", 9),
+             _cobilled("4", "Bonus", "Back 2 Life", "2022-11-18", 1, disc=2),
+             _cobilled("5", "Zulu", "Older Album", "2020-01-01", 12)]
+
+    def build(self, with_single=False):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        single_track = {"id": "9", "type": "songs", "attributes": {
+            "name": "Own Single", "releaseDate": "2022-11-18", "artistName": "Bladee",
+            "playParams": {"id": "9"}, "isrc": "ISRC9", "durationInMillis": 50000}}
+
+        def fake_amp(path, **params):
+            if path.endswith("/artists/1"):
+                return {"data": [{"id": "1", "attributes": {"name": "Bladee"}}]}
+            if path.endswith("/view/appears-on-albums"):
+                return {"data": [{"id": "other"}]}
+            if path.endswith("/view/singles") and with_single:
+                return {"data": [{"id": "s", "attributes": {"name": "Own Single - Single", "releaseDate": "2022-11-18"}}]}
+            if "/view/" in path:
+                return {"data": []}
+            if path.endswith("/albums") and params.get("ids") == "other":
+                return {"data": [{"relationships": {"tracks": {"data": [{"id": s["id"]} for s in self.SONGS]}}}]}
+            if path.endswith("/albums") and params.get("ids") == "s":
+                return {"data": [{"id": "s", "relationships": {"tracks": {"data": [single_track]}}}]}
+            if path.endswith("/albums"):  # the songs' own albums: not Bladee's
+                return {"data": [{"id": i, "attributes": {"name": "x", "releaseDate": "2022"},
+                                  "relationships": {"artists": {"data": [{"id": "2"}]}}} for i in params["ids"].split(",")]}
+            if path.endswith("/songs"):
+                return {"data": [s for s in self.SONGS if s["id"] in params["ids"].split(",")]}
+            raise AssertionError(path)
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(discog, "amp", fake_amp), \
+                mock.patch.object(discog, "LISTS", Path(d)):
+            return [r["title"] for r in discog.build("1", "at", quiet=True)[2]]
+
+    def test_songs_of_one_album_follow_disc_and_track_number(self):
+        self.assertEqual(self.build(), ["Zulu", "All the Way", "The Kingdom", "3 Star Reunite", "Bonus"])
+
+    def test_an_own_single_on_the_same_day_still_sorts(self):
+        self.assertEqual(self.build(with_single=True),
+                         ["Zulu", "All the Way", "The Kingdom", "3 Star Reunite", "Bonus", "Own Single"])
