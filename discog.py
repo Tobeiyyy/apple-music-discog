@@ -73,9 +73,11 @@ BAD_RELEASE = re.compile(r"\(DJ Mix\)|\bLive (at|from|in)\b|[\(\[]Live[\)\]]|\bV
 # ---------- Apple Music catalog access ----------
 
 def fetch_token():
-    html = urllib.request.urlopen(urllib.request.Request("https://music.apple.com/us/browse", headers=UA)).read().decode()
+    html = urllib.request.urlopen(urllib.request.Request("https://music.apple.com/us/browse", headers=UA),
+                                  timeout=30).read().decode()
     js = re.search(r'/assets/index[^"]*\.js', html).group(0)
-    src = urllib.request.urlopen(urllib.request.Request("https://music.apple.com" + js, headers=UA)).read().decode()
+    src = urllib.request.urlopen(urllib.request.Request("https://music.apple.com" + js, headers=UA),
+                                 timeout=30).read().decode()
     token = re.search(r"eyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}", src).group(0)
     TOKEN_FILE.write_text(token)
     return token
@@ -90,17 +92,17 @@ def amp(path, method="GET", body=None, user_token=None, tries=6, **params):
     if params:
         path += ("&" if "?" in path else "?") + urllib.parse.urlencode(params)
     for attempt in range(tries):
-        _token = _token or fetch_token()
-        headers = {**UA, "Authorization": f"Bearer {_token}", "Origin": "https://music.apple.com"}
-        if user_token:
-            headers["Media-User-Token"] = user_token
-        data = None
-        if body is not None:
-            data = json.dumps(body).encode()
-            headers["Content-Type"] = "application/json"
-        req = urllib.request.Request("https://amp-api.music.apple.com" + path, data=data,
-                                     headers=headers, method=method)
         try:
+            _token = _token or fetch_token()
+            headers = {**UA, "Authorization": f"Bearer {_token}", "Origin": "https://music.apple.com"}
+            if user_token:
+                headers["Media-User-Token"] = user_token
+            data = None
+            if body is not None:
+                data = json.dumps(body).encode()
+                headers["Content-Type"] = "application/json"
+            req = urllib.request.Request("https://amp-api.music.apple.com" + path, data=data,
+                                         headers=headers, method=method)
             with urllib.request.urlopen(req, timeout=30) as r:
                 raw = r.read()
                 return json.loads(raw) if raw else {}
@@ -116,6 +118,11 @@ def amp(path, method="GET", body=None, user_token=None, tries=6, **params):
                 time.sleep(3 * (attempt + 1))
             else:
                 raise
+        except (TimeoutError, urllib.error.URLError) as e:  # no answer at all: offline, VPN, DNS, slow network
+            if attempt >= min(2, tries - 1):
+                raise SystemExit(f"Can't reach Apple Music ({getattr(e, 'reason', e)}). "
+                                 "Check your internet connection (or VPN) and try again.")
+            time.sleep(3 * (attempt + 1))
     raise RuntimeError(f"Apple Music API kept failing for {path}")
 
 

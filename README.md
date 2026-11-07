@@ -32,7 +32,7 @@ can check nothing you care about went missing.
 
 ## Get started
 
-1. **Install Python 3.** Windows and Mac: [python.org/downloads](https://www.python.org/downloads/). On Windows,
+1. **Install Python 3** (tested with 3.11 and 3.13). Windows and Mac: [python.org/downloads](https://www.python.org/downloads/). On Windows,
    tick **"Add python.exe to PATH"** in the installer.
 2. **Download this tool:** green **Code** button → **Download ZIP**, then unzip it anywhere.
 3. **Start it:**
@@ -107,7 +107,7 @@ Every update run is appended to `update-log.md`.
 python -m unittest discover -s tests
 ```
 
-Developed and tested on Windows 10. macOS and Linux should work (plain Python, no Windows-only code outside
+Developed and tested on Windows 10 with Python 3.11 and 3.13. macOS and Linux should work (plain Python, no Windows-only code outside
 `setup-windows.ps1`), but haven't been tested yet.
 
 ## Using Spotify?

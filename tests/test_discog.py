@@ -54,6 +54,10 @@ class AmpRetries(unittest.TestCase):
         def fake(req, timeout=30):
             calls.append(1)
             code = codes[len(calls) - 1]
+            if code == "timeout":
+                raise TimeoutError("The read operation timed out")
+            if code == "offline":
+                raise urllib.error.URLError(OSError("getaddrinfo failed"))
             if code != 200:
                 raise urllib.error.HTTPError(req.full_url, code, "x", {}, io.BytesIO(b""))
             return mock.MagicMock(__enter__=lambda s: io.BytesIO(b'{"ok": 1}'), __exit__=lambda *a: None)
@@ -67,6 +71,15 @@ class AmpRetries(unittest.TestCase):
     def test_a_403_that_never_clears_still_fails(self):
         with self.assertRaises(Exception):
             self._run([403] * 10)
+
+    def test_a_network_timeout_is_retried(self):
+        self.assertEqual(self._run(["timeout", 200]), ({"ok": 1}, 2))
+
+    def test_no_connection_ends_with_a_readable_message(self):
+        for failure in ("timeout", "offline"):
+            with self.assertRaises(SystemExit) as cm:
+                self._run([failure] * 10)
+            self.assertIn("internet connection", str(cm.exception.code))
 
     def test_a_404_is_not_retried(self):
         import urllib.error
